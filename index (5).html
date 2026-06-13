@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Celestial Navigation — The Navigational Triangle</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --panel: rgba(16, 22, 40, 0.82);
+    --border: rgba(120, 150, 220, 0.22);
+    --text: #dce4f5;
+    --muted: #8a98b8;
+    --accent: #6ea8ff;
+    --zenith: #ffd34d;
+    --pole: #6ea8ff;
+    --body: #ff7a5c;
+    --arc: #5de0b0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #scene { position: fixed; inset: 0; z-index: 0; }
+  .panel {
+    position: fixed;
+    z-index: 10;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  #controls { top: 70px; left: 16px; width: 290px; }
+  #readout  { top: 70px; right: 16px; width: 220px; }
+  #legend   { bottom: 16px; left: 16px; }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: .2px; margin-bottom: 4px; }
+  .sub { font-size: 11.5px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
+  .row { margin-bottom: 14px; }
+  .row label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .row label b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .dm {
+    background: rgba(120,150,220,.10); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+    width: 118px; text-align: right; padding: 3px 7px; font-family: inherit;
+  }
+  .dm:focus { outline: none; border-color: var(--accent); background: rgba(110,168,255,.14); }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 4px; border-radius: 4px;
+    background: rgba(120,150,220,.25); outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 2px solid #0a0e1a;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 2px solid #0a0e1a;
+  }
+  .readline { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .readline:last-child { border-bottom: none; }
+  .readline span:first-child { color: var(--muted); }
+  .readline span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
+  #readout h1 { margin-bottom: 10px; }
+  .leg { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 5px 0; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .toggles { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .toggles button {
+    background: rgba(120,150,220,.12); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px;
+    padding: 6px 10px; font-size: 11.5px; cursor: pointer; transition: .15s;
+  }
+  .toggles button.off { opacity: .4; }
+  .toggles button:hover { background: rgba(120,150,220,.22); }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+
+  #viewbar { top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; padding: 6px; }
+  .vbtn {
+    background: transparent; color: var(--muted); border: none;
+    border-radius: 8px; padding: 7px 14px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: .15s;
+  }
+  .vbtn:hover { color: var(--text); }
+  .vbtn.active { background: var(--accent); color: #0a0e1a; }
+  #polar { position: fixed; inset: 0; z-index: 1; display: none; }
+  #plate { position: fixed; inset: 0; z-index: 1; display: none; }
+  #polarControls { top: 70px; left: 16px; width: 290px; display: none; }
+  #polarReadout { top: 70px; right: 16px; width: 210px; display: none; }
+  #plateControls { top: 70px; left: 16px; width: 290px; display: none; }
+  #plateReadout { top: 70px; right: 16px; width: 210px; display: none; }
+  body.polarmode #controls, body.polarmode #readout, body.polarmode #legend { display: none; }
+  body.polarmode #scene { display: none; }
+  body.polarmode #polar { display: block; }
+  body.polarmode #polarControls, body.polarmode #polarReadout { display: block; }
+  body.platemode #controls, body.platemode #readout, body.platemode #legend { display: none; }
+  body.platemode #scene { display: none; }
+  body.platemode #plate { display: block; }
+  body.platemode #plateControls, body.platemode #plateReadout { display: block; }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+
+<div class="panel" id="viewbar">
+  <button id="vTri" class="vbtn active">Navigational triangle</button>
+  <button id="vPol" class="vbtn">Polar — hour angles</button>
+  <button id="vHz" class="vbtn">Horizon plate</button>
+</div>
+
+<canvas id="polar"></canvas>
+<canvas id="plate"></canvas>
+
+<div class="panel" id="plateControls">
+  <h1>Horizon plotting plate</h1>
+  <div class="sub">Rational horizon diagram — orthographic projection on the plane of the horizon. Centre = zenith (Z) · rim = horizon.</div>
+  <div class="row">
+    <label>Observer latitude <input class="dm" id="latT2" value="40° 00.0' N"></label>
+    <input type="range" id="lat2" min="-89.9" max="89.9" value="40" step="0.0166667">
+  </div>
+  <div class="row">
+    <label>Body declination <input class="dm" id="decT2" value="20° 00.0' N"></label>
+    <input type="range" id="dec2" min="-89.9" max="89.9" value="20" step="0.0166667">
+  </div>
+  <div class="row">
+    <label>Local hour angle (LHA) <input class="dm" id="lhaT2" value="45° 00.0'"></label>
+    <input type="range" id="lha2" min="0" max="359.9833" value="45" step="0.0166667">
+  </div>
+  <div class="hint">ZP = co-lat · PX = polar dist (co-dec) · ZX = zenith dist (90−Hc). Bearing of body = Zn.</div>
+</div>
+
+<div class="panel" id="plateReadout">
+  <h1>Plotted</h1>
+  <div class="readline"><span>Altitude Hc</span><span id="pHc">—</span></div>
+  <div class="readline"><span>Azimuth Zn</span><span id="pZn">—</span></div>
+  <div class="readline"><span>Zenith dist ZX</span><span id="pZX">—</span></div>
+  <div class="readline"><span>Co-lat ZP</span><span id="pZP">—</span></div>
+  <div class="readline"><span>Polar dist PX</span><span id="pPX">—</span></div>
+</div>
+
+<div class="panel" id="polarControls">
+  <h1>Hour angles (view from N pole)</h1>
+  <div class="sub">All angles swept <b>westward</b> (clockwise from above the pole), in degrees &amp; decimal minutes.</div>
+  <div class="row">
+    <label>GHA Aries <input class="dm" id="ghaAT" value="045° 00.0'"></label>
+    <input type="range" id="ghaA" min="0" max="359.9833" value="45" step="0.0166667">
+  </div>
+  <div class="row">
+    <label>SHA star <input class="dm" id="shaT" value="100° 00.0'"></label>
+    <input type="range" id="sha" min="0" max="359.9833" value="100" step="0.0166667">
+  </div>
+  <div class="row">
+    <label>Observer longitude <input class="dm" id="lonT" value="030° 00.0' E"></label>
+    <input type="range" id="lon" min="-179.9833" max="179.9833" value="30" step="0.0166667">
+  </div>
+  <div class="hint">GHA★ = GHA♈ + SHA★ · LHA★ = GHA★ + λE (− λW), all mod 360°.</div>
+</div>
+
+<div class="panel" id="polarReadout">
+  <h1>Computed</h1>
+  <div class="readline"><span>GHA Aries</span><span id="rGhaA">—</span></div>
+  <div class="readline"><span>SHA star</span><span id="rSha">—</span></div>
+  <div class="readline"><span>GHA star</span><span id="rGha">—</span></div>
+  <div class="readline"><span>Longitude</span><span id="rLon">—</span></div>
+  <div class="readline"><span>LHA star</span><span id="rLha">—</span></div>
+</div>
+
+<div class="panel" id="controls">
+  <h1>Navigational triangle</h1>
+  <div class="sub">Drag to orbit · scroll to zoom. Watch the spherical triangle PZX deform as you change the inputs.</div>
+
+  <div class="row">
+    <label>Observer latitude <input class="dm" id="latT" value="40° 00.0' N"></label>
+    <input type="range" id="lat" min="-89.9" max="89.9" value="40" step="0.0166667">
+  </div>
+  <div class="row">
+    <label>Body declination <input class="dm" id="decT" value="20° 00.0' N"></label>
+    <input type="range" id="dec" min="-89.9" max="89.9" value="20" step="0.0166667">
+  </div>
+  <div class="row">
+    <label>Local hour angle (LHA) <input class="dm" id="lhaT" value="45° 00.0'"></label>
+    <input type="range" id="lha" min="0" max="359.9833" value="45" step="0.0166667">
+  </div>
+
+  <div class="toggles">
+    <button id="tEq">Equator</button>
+    <button id="tHz">Horizon</button>
+    <button id="tGr">Grid</button>
+    <button id="tLb">Labels</button>
+  </div>
+  <div class="hint">P = elevated pole · Z = zenith · X = the body.<br>Sides: co-lat, polar distance, zenith distance.</div>
+</div>
+
+<div class="panel" id="readout">
+  <h1>Sight reduction</h1>
+  <div class="readline"><span>Calc. altitude Hc</span><span id="hc">—</span></div>
+  <div class="readline"><span>Azimuth Zn</span><span id="zn">—</span></div>
+  <div class="readline"><span>Zenith dist.</span><span id="zd">—</span></div>
+  <div class="readline"><span>Above horizon?</span><span id="vis">—</span></div>
+</div>
+
+<div class="panel" id="legend">
+  <div class="leg"><div class="dot" style="background:var(--pole)"></div>Elevated pole (P)</div>
+  <div class="leg"><div class="dot" style="background:var(--zenith)"></div>Zenith (Z)</div>
+  <div class="leg"><div class="dot" style="background:var(--body)"></div>Celestial body (X)</div>
+  <div class="leg"><div class="dot" style="background:var(--arc)"></div>Triangle sides (great arcs)</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const D2R = Math.PI/180, R2D = 180/Math.PI, R = 5;
+
+// ---- degrees & decimal-minutes formatting ----
+// fmtDM(31.39, 'NS') -> "31° 23.4' N" ;  hemi '' -> "031° 23.4'"
+function fmtDM(deg, hemi){
+  let sign = deg < 0 ? -1 : 1;
+  let a = Math.abs(deg);
+  let d = Math.floor(a + 1e-9);
+  let m = (a - d) * 60;
+  if (m >= 59.9499) { m = 0; d += 1; }   // round-up carry
+  const mStr = m.toFixed(1).padStart(4,'0');
+  if (hemi === 'NS') return d + '° ' + mStr + "' " + (sign<0 ? 'S' : 'N');
+  if (hemi === 'EW') return d + '° ' + mStr + "' " + (sign<0 ? 'W' : 'E');
+  if (hemi === '360') return String(d).padStart(3,'0') + '° ' + mStr + "'";
+  if (hemi === 'EWlon') return String(d).padStart(3,'0') + '° ' + mStr + "' " + (sign<0 ? 'W' : 'E');
+  return d + '° ' + mStr + "'";
+}
+// parse "40 23.4 N" / "40°23.4'N" / "-40 23.4" / "40.39" -> signed decimal degrees
+function parseDM(str){
+  if (str == null) return null;
+  let s = String(str).trim().toUpperCase();
+  let hemi = 0;
+  if (/[SW]/.test(s)) hemi = -1; else if (/[NE]/.test(s)) hemi = 1;
+  s = s.replace(/[°'"NSEW]/g, ' ');
+  const nums = s.match(/-?\d+(\.\d+)?/g);
+  if (!nums) return null;
+  let d = parseFloat(nums[0]);
+  let neg = d < 0; d = Math.abs(d);
+  let m = nums[1] ? parseFloat(nums[1]) : 0;
+  let val = d + m/60;
+  if (hemi === -1 || neg) val = -val;
+  return val;
+}
+
+// ---- scene ----
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0e1a, 0.022);
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(11, 7, 11);
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.getElementById('scene').appendChild(renderer.domElement);
+
+// ---- minimal orbit controls (no external dep) ----
+let theta=0.9, phi=1.0, radius=18, dragging=false, px=0, py=0;
+function applyCam(){
+  camera.position.set(
+    radius*Math.sin(phi)*Math.cos(theta),
+    radius*Math.cos(phi),
+    radius*Math.sin(phi)*Math.sin(theta)
+  );
+  camera.lookAt(0,0,0);
+}
+const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e=>{dragging=true; px=e.clientX; py=e.clientY;});
+addEventListener('pointerup', ()=>dragging=false);
+addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  theta -= (e.clientX-px)*0.006;
+  phi = Math.max(0.15, Math.min(Math.PI-0.15, phi-(e.clientY-py)*0.006));
+  px=e.clientX; py=e.clientY; applyCam();
+});
+cv.addEventListener('wheel', e=>{
+  e.preventDefault();
+  radius = Math.max(8, Math.min(40, radius + e.deltaY*0.012));
+  applyCam();
+}, {passive:false});
+applyCam();
+
+// ---- celestial sphere wireframe ----
+const sphereGrid = new THREE.LineSegments(
+  new THREE.WireframeGeometry(new THREE.SphereGeometry(R, 36, 24)),
+  new THREE.LineBasicMaterial({ color:0x2a3a5e, transparent:true, opacity:0.35 })
+);
+scene.add(sphereGrid);
+
+const glassMat = new THREE.MeshBasicMaterial({ color:0x10203a, transparent:true, opacity:0.06, side:THREE.BackSide });
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(R*0.998, 32, 24), glassMat));
+
+// observer at centre
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(0.12,16,16), new THREE.MeshBasicMaterial({color:0xffffff})));
+
+// ---- helpers ----
+// spherical (alt, az) in observer frame -> cartesian. az from north(+Z) clockwise toward east(+X). up = +Y.
+function altAzToVec(alt, az, r=R){
+  const a=alt*D2R, A=az*D2R;
+  return new THREE.Vector3(
+    r*Math.cos(a)*Math.sin(A),
+    r*Math.sin(a),
+    r*Math.cos(a)*Math.cos(A)
+  );
+}
+function greatArc(v1, v2, color, width){
+  const a=v1.clone().normalize(), b=v2.clone().normalize();
+  const ang=Math.acos(Math.max(-1,Math.min(1,a.dot(b))));
+  const pts=[]; const n=Math.max(2,Math.round(ang*R2D/2));
+  for(let i=0;i<=n;i++){
+    const t=i/n;
+    // slerp
+    const s=Math.sin(ang);
+    let p;
+    if(s<1e-6){ p=a.clone(); }
+    else { p=a.clone().multiplyScalar(Math.sin((1-t)*ang)/s).add(b.clone().multiplyScalar(Math.sin(t*ang)/s)); }
+    pts.push(p.multiplyScalar(R*1.002));
+  }
+  return new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, linewidth:width||1 })
+  );
+}
+function circleOnSphere(poleVec, color, opacity){
+  // great or small circle: set of points at 90° from poleVec is the great circle
+  const p=poleVec.clone().normalize();
+  let ref=new THREE.Vector3(0,1,0);
+  if(Math.abs(p.dot(ref))>0.95) ref=new THREE.Vector3(1,0,0);
+  const u=ref.clone().sub(p.clone().multiplyScalar(p.dot(ref))).normalize();
+  const w=p.clone().cross(u).normalize();
+  const pts=[];
+  for(let i=0;i<=128;i++){
+    const t=i/128*Math.PI*2;
+    pts.push(u.clone().multiplyScalar(Math.cos(t)).add(w.clone().multiplyScalar(Math.sin(t))).multiplyScalar(R*1.001));
+  }
+  return new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent:true, opacity:opacity||0.5 })
+  );
+}
+function marker(color,size){
+  return new THREE.Mesh(new THREE.SphereGeometry(size||0.16,18,18), new THREE.MeshBasicMaterial({color}));
+}
+
+// sprite text labels
+function makeLabel(txt, color){
+  const c=document.createElement('canvas'); c.width=256; c.height=128;
+  const g=c.getContext('2d');
+  g.font='bold 76px -apple-system, Segoe UI, sans-serif';
+  g.fillStyle=color; g.textAlign='center'; g.textBaseline='middle';
+  g.shadowColor='rgba(0,0,0,0.9)'; g.shadowBlur=8;
+  g.fillText(txt,128,64);
+  const tex=new THREE.CanvasTexture(c);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthTest:false}));
+  sp.scale.set(1.4,0.7,1);
+  return sp;
+}
+
+// ---- persistent objects ----
+let triGroup = new THREE.Group(); scene.add(triGroup);
+let eqCircle, hzCircle;
+const showState = { eq:true, hz:true, grid:true, labels:true };
+
+function clearGroup(g){ while(g.children.length){ const o=g.children.pop(); o.geometry&&o.geometry.dispose&&o.geometry.dispose(); } }
+
+function rebuild(){
+  const lat = +document.getElementById('lat').value;
+  const dec = +document.getElementById('dec').value;
+  const lha = +document.getElementById('lha').value;
+
+  // sight reduction
+  const L=lat*D2R, d=dec*D2R, H=lha*D2R;
+  const sinHc = Math.sin(L)*Math.sin(d) + Math.cos(L)*Math.cos(d)*Math.cos(H);
+  const Hc = Math.asin(Math.max(-1,Math.min(1,sinHc)));
+  let cosZ = (Math.sin(d)-Math.sin(L)*Math.sin(Hc)) / (Math.cos(L)*Math.cos(Hc));
+  cosZ=Math.max(-1,Math.min(1,cosZ));
+  let Z = Math.acos(cosZ)*R2D;
+  // azimuth quadrant: if LHA < 180 the body is to the west
+  const Zn = (lha < 180) ? (360 - Z) : Z;
+  const HcDeg = Hc*R2D;
+  const zd = 90 - HcDeg;
+
+  // key points in observer frame
+  const elevPole = lat>=0 ? altAzToVec(Math.abs(lat),0) : altAzToVec(Math.abs(lat),180);
+  const zenith   = altAzToVec(90,0);
+  const bodyV    = altAzToVec(HcDeg, Zn);
+
+  clearGroup(triGroup);
+
+  // triangle sides
+  triGroup.add(greatArc(elevPole, zenith, 0x5de0b0, 2)); // co-lat
+  triGroup.add(greatArc(zenith,   bodyV,  0x5de0b0, 2)); // zenith distance
+  triGroup.add(greatArc(elevPole, bodyV,  0x5de0b0, 2)); // polar distance
+
+  // vertices
+  const mP=marker(0x6ea8ff,0.17); mP.position.copy(elevPole); triGroup.add(mP);
+  const mZ=marker(0xffd34d,0.17); mZ.position.copy(zenith);   triGroup.add(mZ);
+  const mX=marker(0xff7a5c,0.20); mX.position.copy(bodyV);    triGroup.add(mX);
+
+  // body-to-observer ray + drop line to horizon
+  triGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), bodyV.clone().multiplyScalar(1.0)]),
+    new THREE.LineBasicMaterial({color:0xff7a5c, transparent:true, opacity:0.4})
+  ));
+
+  if(showState.labels){
+    const lp=makeLabel('P','#9ec5ff'); lp.position.copy(elevPole.clone().multiplyScalar(1.12)); triGroup.add(lp);
+    const lz=makeLabel('Z','#ffdf80'); lz.position.copy(zenith.clone().multiplyScalar(1.12));   triGroup.add(lz);
+    const lx=makeLabel('X','#ff9c84'); lx.position.copy(bodyV.clone().multiplyScalar(1.13));     triGroup.add(lx);
+  }
+
+  // readouts
+  document.getElementById('hc').textContent = fmtDM(HcDeg, '');
+  document.getElementById('zn').textContent = fmtDM(Zn, '360');
+  document.getElementById('zd').textContent = fmtDM(zd, '');
+  const vis=document.getElementById('vis');
+  vis.textContent = HcDeg>=0 ? 'Yes' : 'Below';
+  vis.style.color = HcDeg>=0 ? '#5de0b0' : '#ff7a5c';
+
+  // sync the editable entry boxes (only when not being typed in)
+  if(document.activeElement!==document.getElementById('latT'))
+    document.getElementById('latT').value = fmtDM(lat,'NS');
+  if(document.activeElement!==document.getElementById('decT'))
+    document.getElementById('decT').value = fmtDM(dec,'NS');
+  if(document.activeElement!==document.getElementById('lhaT'))
+    document.getElementById('lhaT').value = fmtDM(lha,'360');
+}
+
+function rebuildCircles(){
+  if(eqCircle){scene.remove(eqCircle);} if(hzCircle){scene.remove(hzCircle);}
+  const lat=+document.getElementById('lat').value;
+  // celestial equator: great circle whose pole is the elevated pole
+  const elevPole = lat>=0 ? altAzToVec(Math.abs(lat),0) : altAzToVec(Math.abs(lat),180);
+  eqCircle = circleOnSphere(elevPole, 0x6ea8ff, 0.55); eqCircle.visible=showState.eq; scene.add(eqCircle);
+  // horizon: great circle whose pole is the zenith (+Y)
+  hzCircle = circleOnSphere(new THREE.Vector3(0,1,0), 0xffd34d, 0.5); hzCircle.visible=showState.hz; scene.add(hzCircle);
+}
+
+['lat','dec','lha'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', ()=>{ rebuild(); if(id==='lat') rebuildCircles(); });
+});
+
+// editable degree/minute entry boxes -> slider value
+function bindEntry(textId, sliderId, isLat){
+  const t=document.getElementById(textId), sl=document.getElementById(sliderId);
+  function commit(){
+    let v=parseDM(t.value);
+    if(v===null || isNaN(v)){ rebuild(); return; }   // bad input: restore from rebuild
+    let min=+sl.min, max=+sl.max;
+    if(sliderId==='lha'){ v=((v%360)+360)%360; }       // wrap LHA into 0–360
+    v=Math.max(min, Math.min(max, v));
+    sl.value=v;
+    rebuild(); if(isLat) rebuildCircles();
+  }
+  t.addEventListener('change', commit);
+  t.addEventListener('keydown', e=>{ if(e.key==='Enter'){ t.blur(); }});
+}
+bindEntry('latT','lat',true);
+bindEntry('decT','dec',false);
+bindEntry('lhaT','lha',false);
+
+function setupToggle(btnId, key, target){
+  const b=document.getElementById(btnId);
+  b.addEventListener('click', ()=>{
+    showState[key]=!showState[key];
+    b.classList.toggle('off', !showState[key]);
+    if(key==='eq' && eqCircle) eqCircle.visible=showState.eq;
+    if(key==='hz' && hzCircle) hzCircle.visible=showState.hz;
+    if(key==='grid') sphereGrid.visible=showState.grid;
+    if(key==='labels') rebuild();
+  });
+}
+setupToggle('tEq','eq'); setupToggle('tHz','hz'); setupToggle('tGr','grid'); setupToggle('tLb','labels');
+
+rebuildCircles(); rebuild();
+
+// starfield backdrop
+const starGeo=new THREE.BufferGeometry();
+const starPos=[]; for(let i=0;i<800;i++){
+  const r=60+Math.random()*60, t=Math.random()*Math.PI*2, p=Math.acos(2*Math.random()-1);
+  starPos.push(r*Math.sin(p)*Math.cos(t), r*Math.sin(p)*Math.sin(t), r*Math.cos(p));
+}
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos,3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xaab8d8, size:0.4, transparent:true, opacity:0.7})));
+
+addEventListener('resize', ()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  sizePolar(); drawPolar();
+  if(typeof sizePlate==='function'){ sizePlate(); drawPlate(); }
+});
+(function loop(){ requestAnimationFrame(loop); renderer.render(scene,camera); })();
+
+// ============ POLAR (plan) VIEW — hour angles from the N pole ============
+const pc = document.getElementById('polar');
+const pctx = pc.getContext('2d');
+function sizePolar(){
+  const dpr=Math.min(devicePixelRatio,2);
+  pc.width=innerWidth*dpr; pc.height=innerHeight*dpr;
+  pctx.setTransform(dpr,0,0,dpr,0,0);
+}
+sizePolar();
+
+// angle (deg, measured westward from Greenwich) -> screen point.
+// Greenwich meridian drawn straight UP; westward = clockwise.
+function polarPt(cx, cy, rad, ghaDeg){
+  const a = (-90 + ghaDeg) * D2R;   // 0°->up, increasing clockwise
+  return [ cx + rad*Math.cos(a), cy + rad*Math.sin(a) ];
+}
+function ringLabel(ctx,cx,cy,rad,ghaDeg,txt,color){
+  const [x,y]=polarPt(cx,cy,rad,ghaDeg);
+  ctx.fillStyle=color; ctx.font='600 13px -apple-system, Segoe UI, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(txt,x,y);
+}
+// sweep arc from angle a0 to a0+span (both westward deg), at radius rad
+function sweepArc(ctx,cx,cy,rad,a0,span,color,width){
+  ctx.strokeStyle=color; ctx.lineWidth=width||2;
+  ctx.beginPath();
+  const start=(-90+a0)*D2R, end=(-90+a0+span)*D2R;
+  ctx.arc(cx,cy,rad,start,end,false);  // span>0 sweeps clockwise on screen = westward
+  ctx.stroke();
+  // small arrowhead at the end
+  const [ex,ey]=polarPt(cx,cy,rad,a0+span);
+  const tang=(-90+a0+span+90)*D2R;
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.moveTo(ex,ey);
+  ctx.lineTo(ex-7*Math.cos(tang-0.4), ey-7*Math.sin(tang-0.4));
+  ctx.lineTo(ex-7*Math.cos(tang+0.4), ey-7*Math.sin(tang+0.4));
+  ctx.closePath(); ctx.fill();
+}
+
+function drawPolar(){
+  if(!document.body.classList.contains('polarmode')) return;
+  const W=innerWidth, H=innerHeight;
+  pctx.clearRect(0,0,W,H);
+  const cx=W/2, cy=H/2+10, Rr=Math.min(W,H)*0.32;
+
+  const ghaA = +document.getElementById('ghaA').value;
+  const sha  = +document.getElementById('sha').value;
+  const lon  = +document.getElementById('lon').value;        // E +, W -
+  const gha  = ((ghaA + sha)%360+360)%360;
+  const lha  = ((gha + lon)%360+360)%360;
+
+  // equatorial circle
+  pctx.strokeStyle='rgba(120,150,220,0.35)'; pctx.lineWidth=1.5;
+  pctx.beginPath(); pctx.arc(cx,cy,Rr,0,Math.PI*2); pctx.stroke();
+  // graduations every 30°
+  pctx.strokeStyle='rgba(120,150,220,0.18)'; pctx.lineWidth=1;
+  for(let g=0; g<360; g+=30){
+    const [x1,y1]=polarPt(cx,cy,Rr-6,g), [x2,y2]=polarPt(cx,cy,Rr+6,g);
+    pctx.beginPath(); pctx.moveTo(x1,y1); pctx.lineTo(x2,y2); pctx.stroke();
+  }
+  // pole dot
+  pctx.fillStyle='#fff'; pctx.beginPath(); pctx.arc(cx,cy,4,0,Math.PI*2); pctx.fill();
+  pctx.fillStyle='#8a98b8'; pctx.font='600 12px -apple-system,sans-serif';
+  pctx.textAlign='center'; pctx.fillText('North celestial pole', cx, cy+22);
+
+  // meridians / radii: Greenwich (up), observer, Aries, star
+  function radius(ghaDeg,color,width,dash){
+    const [x,y]=polarPt(cx,cy,Rr,ghaDeg);
+    pctx.strokeStyle=color; pctx.lineWidth=width||2;
+    pctx.setLineDash(dash||[]); pctx.beginPath();
+    pctx.moveTo(cx,cy); pctx.lineTo(x,y); pctx.stroke(); pctx.setLineDash([]);
+  }
+  const obsWest = ((-lon)%360+360)%360;      // observer meridian, west angle from Greenwich
+  radius(0,   '#cfd8ee', 2);                 // Greenwich meridian (reference, up)
+  radius(ghaA,'#5de0b0', 2);                 // Aries
+  radius(gha, '#ff7a5c', 2.5);               // star meridian (GHA)
+  radius(obsWest, '#6ea8ff', 2, [6,4]);      // observer meridian
+
+  // outer labels
+  ringLabel(pctx,cx,cy,Rr+26, 0,    'Greenwich', '#cfd8ee');
+  ringLabel(pctx,cx,cy,Rr+22, ghaA, '\u2648 Aries', '#5de0b0');
+  ringLabel(pctx,cx,cy,Rr+20, gha,  '\u2605 Star', '#ff9c84');
+  ringLabel(pctx,cx,cy,Rr+30, obsWest, 'Observer', '#9ec5ff');
+
+  // sweep arcs at staggered radii so they don't overlap
+  sweepArc(pctx,cx,cy,Rr*0.50, 0,      ghaA, '#5de0b0', 2);   // GHA Aries: Greenwich->Aries
+  sweepArc(pctx,cx,cy,Rr*0.66, ghaA,   sha,  '#ffd34d', 2);   // SHA: Aries->Star
+  sweepArc(pctx,cx,cy,Rr*0.82, 0,      gha,  '#ff7a5c', 2);   // GHA star: Greenwich->Star
+  sweepArc(pctx,cx,cy,Rr*0.34, obsWest,lha,  '#6ea8ff', 2);   // LHA: observer->Star, westward
+
+  // arc captions
+  function cap(rad,midGha,txt,color){
+    const [x,y]=polarPt(cx,cy,rad+13,midGha);
+    pctx.fillStyle=color; pctx.font='600 12px -apple-system,sans-serif';
+    pctx.textAlign='center'; pctx.textBaseline='middle'; pctx.fillText(txt,x,y);
+  }
+  cap(Rr*0.50, ghaA/2,        'GHA\u2648', '#5de0b0');
+  cap(Rr*0.66, ghaA+sha/2,    'SHA', '#ffd34d');
+  cap(Rr*0.82, gha/2,         'GHA\u2605', '#ff9c84');
+  cap(Rr*0.34, obsWest+lha/2, 'LHA', '#9ec5ff');
+
+  // readouts
+  document.getElementById('rGhaA').textContent = fmtDM(ghaA,'360');
+  document.getElementById('rSha').textContent  = fmtDM(sha,'360');
+  document.getElementById('rGha').textContent  = fmtDM(gha,'360');
+  document.getElementById('rLon').textContent  = fmtDM(lon,'EWlon');
+  document.getElementById('rLha').textContent  = fmtDM(lha,'360');
+}
+
+// wire polar controls (sliders + editable boxes)
+function bindPolar(textId, sliderId, kind){
+  const sl=document.getElementById(sliderId), t=document.getElementById(textId);
+  sl.addEventListener('input', ()=>{
+    if(document.activeElement!==t){
+      const v=+sl.value;
+      t.value = kind==='EW' ? fmtDM(v,'EWlon') : fmtDM(v,'360');
+    }
+    drawPolar();
+  });
+  t.addEventListener('change', ()=>{
+    let v=parseDM(t.value); if(v===null||isNaN(v)){ drawPolar(); return; }
+    if(kind==='360'){ v=((v%360)+360)%360; }
+    v=Math.max(+sl.min, Math.min(+sl.max, v));
+    sl.value=v; drawPolar();
+  });
+  t.addEventListener('keydown', e=>{ if(e.key==='Enter') t.blur(); });
+}
+bindPolar('ghaAT','ghaA','360');
+bindPolar('shaT','sha','360');
+bindPolar('lonT','lon','EW');
+
+// view switching
+const vTri=document.getElementById('vTri'), vPol=document.getElementById('vPol'), vHz=document.getElementById('vHz');
+function setActive(btn){ [vTri,vPol,vHz].forEach(b=>b.classList.remove('active')); btn.classList.add('active'); }
+vTri.addEventListener('click', ()=>{
+  document.body.classList.remove('polarmode','platemode'); setActive(vTri);
+});
+vPol.addEventListener('click', ()=>{
+  document.body.classList.remove('platemode'); document.body.classList.add('polarmode');
+  setActive(vPol); sizePolar(); drawPolar();
+});
+vHz.addEventListener('click', ()=>{
+  document.body.classList.remove('polarmode'); document.body.classList.add('platemode');
+  setActive(vHz); sizePlate(); drawPlate();
+});
+
+// ============ HORIZON PLATE — zenith-centred plan (the plotting plate) ============
+const pl = document.getElementById('plate');
+const plx = pl.getContext('2d');
+function sizePlate(){
+  const dpr=Math.min(devicePixelRatio,2);
+  pl.width=innerWidth*dpr; pl.height=innerHeight*dpr;
+  plx.setTransform(dpr,0,0,dpr,0,0);
+}
+sizePlate();
+
+// On the plate: ORTHOGRAPHIC projection onto the plane of the rational horizon.
+// Eye infinitely far above the zenith. A point at altitude h, azimuth A (from N, clockwise)
+// projects to: radius from centre = cos(h) (×rim), bearing = A. Points below horizon (h<0)
+// fall OUTSIDE the rim (cos still positive but they're on the far hemisphere — we mark them).
+// This is the diagram in Nicholls's / Norie's: great circles through Z are straight lines,
+// other circles are ellipses/arcs.
+function altaz(lat,dec,lha){
+  const L=lat*D2R,d=dec*D2R,H=lha*D2R;
+  const sinH=Math.sin(L)*Math.sin(d)+Math.cos(L)*Math.cos(d)*Math.cos(H);
+  const alt=Math.asin(Math.max(-1,Math.min(1,sinH)));
+  let cz=(Math.sin(d)-Math.sin(L)*Math.sin(alt))/(Math.cos(L)*Math.cos(alt));
+  cz=Math.max(-1,Math.min(1,cz));
+  const Z=Math.acos(cz);
+  const Zn=(((lha%360)+360)%360 < 180) ? 2*Math.PI - Z : Z;
+  return {alt:alt*R2D, az:Zn*R2D};
+}
+// orthographic: returns [screenX, screenY, behind]  (behind=true if below horizon)
+function ortho(cx,cy,Rrim,alt,az){
+  const r=Math.cos(alt*D2R)*Rrim, a=(-90+az)*D2R;
+  return [cx+r*Math.cos(a), cy+r*Math.sin(a), alt<0];
+}
+
+function drawPlate(){
+  if(!document.body.classList.contains('platemode')) return;
+  const W=innerWidth,H=innerHeight;
+  plx.clearRect(0,0,W,H);
+  const cx=W/2, cy=H/2+10, Rrim=Math.min(W,H)*0.34;
+
+  const lat=+document.getElementById('lat2').value;
+  const dec=+document.getElementById('dec2').value;
+  const lha=+document.getElementById('lha2').value;
+
+  const body=altaz(lat,dec,lha);
+  const Hc=body.alt, Zn=body.az;
+  const colat=90-Math.abs(lat);
+  const poldist=90-dec;
+  const zdist=90-Hc;
+  const northUp = lat>=0;                 // elevated pole is N (up) for N lat
+
+  // ---------- rim = rational horizon ----------
+  plx.strokeStyle='rgba(120,150,220,0.55)'; plx.lineWidth=1.8;
+  plx.beginPath(); plx.arc(cx,cy,Rrim,0,Math.PI*2); plx.stroke();
+
+  // helper: draw an arc from a list of {alt,az} sphere points (orthographic), clipping below-horizon
+  function drawSphereCurve(points, color, width, dash){
+    plx.strokeStyle=color; plx.lineWidth=width; plx.setLineDash(dash||[]);
+    plx.beginPath(); let started=false;
+    for(const p of points){
+      const [x,y,behind]=ortho(cx,cy,Rrim,p.alt,p.az);
+      if(p.alt < 0){ started=false; continue; }   // only draw the visible (above-horizon) part
+      if(!started){ plx.moveTo(x,y); started=true; } else { plx.lineTo(x,y); }
+    }
+    plx.stroke(); plx.setLineDash([]);
+  }
+
+  // ---------- principal vertical (N–S line through Z) & prime vertical (E–W) ----------
+  // these are great circles through the zenith -> straight lines through centre
+  plx.strokeStyle='rgba(140,165,210,0.45)'; plx.lineWidth=1.4;
+  plx.beginPath(); plx.moveTo(cx,cy-Rrim); plx.lineTo(cx,cy+Rrim); plx.stroke(); // N-S (vertical)
+  plx.beginPath(); plx.moveTo(cx-Rrim,cy); plx.lineTo(cx+Rrim,cy); plx.stroke(); // E-W (horizontal)
+
+  // cardinal labels (N up, S down, E right, W left). For N lat the elevated pole is to the N(up).
+  plx.fillStyle='#8a98b8'; plx.font='600 13px -apple-system,sans-serif';
+  plx.textAlign='center'; plx.textBaseline='middle';
+  plx.fillText('N', cx, cy-Rrim-18); plx.fillText('S', cx, cy+Rrim+18);
+  plx.fillText('E', cx+Rrim+18, cy); plx.fillText('W', cx-Rrim-18, cy);
+
+  // ---------- celestial equator (declination 0) : great circle, pole at P ----------
+  // build by sweeping LHA, dec=0
+  let eqPts=[]; for(let h=0;h<=360;h+=2) eqPts.push(altaz(lat,0,h));
+  drawSphereCurve(eqPts, 'rgba(120,150,220,0.5)', 1.6);
+  // equator label near its meridian crossing (south point of equator: LHA 0/dec0)
+  {
+    const eqMer=altaz(lat,0,0);
+    if(eqMer.alt>=0){ const [x,y]=ortho(cx,cy,Rrim,eqMer.alt,eqMer.az);
+      plx.fillStyle='#7f8db0'; plx.font='600 11px -apple-system,sans-serif';
+      plx.fillText('equinoctial', x, y+14); }
+  }
+
+  // ---------- body's hour circle / parallel of declination (diurnal circle) ----------
+  // small circle of constant declination = dec, sweeping LHA -> the body's diurnal path. dashed.
+  let decPts=[]; for(let h=0;h<=360;h+=2) decPts.push(altaz(lat,dec,h));
+  drawSphereCurve(decPts, 'rgba(93,224,176,0.55)', 1.4, [6,5]);
+
+  // ---------- the PZX triangle ----------
+  // Z at centre; P due N(or S) at altitude=|lat|; X at (Hc,Zn).
+  const Zc=[cx,cy];
+  const Pp=ortho(cx,cy,Rrim, Math.abs(lat), northUp?0:180);
+  const Xp=ortho(cx,cy,Rrim, Hc, Zn);
+
+  // side ZP — lies along the principal vertical (straight; great circle through Z)
+  plx.strokeStyle='#ff5c5c'; plx.lineWidth=2.4;
+  plx.beginPath(); plx.moveTo(Zc[0],Zc[1]); plx.lineTo(Pp[0],Pp[1]); plx.stroke();
+  // side ZX — vertical circle through Z and body (great circle through Z) -> straight
+  plx.strokeStyle='#668000'; plx.lineWidth=2.4;
+  plx.beginPath(); plx.moveTo(Zc[0],Zc[1]); plx.lineTo(Xp[0],Xp[1]); plx.stroke();
+  // side PX — the body's hour circle (great circle NOT through Z) -> an ARC.
+  // build it: points of constant LHA(=lha), declination running from dec up to 90 (the pole)
+  let pxPts=[];
+  const decStep = dec<=90 ? 1 : -1;
+  for(let dd=dec; (decStep>0? dd<=90 : dd>=90); dd+=decStep) pxPts.push(altaz(lat,dd,lha));
+  plx.strokeStyle='#ff0000'; plx.lineWidth=2.2; plx.beginPath();
+  { let started=false; for(const p of pxPts){ if(p.alt<-30){started=false;continue;}
+      const [x,y]=ortho(cx,cy,Rrim,p.alt,p.az);
+      if(!started){plx.moveTo(x,y);started=true;}else{plx.lineTo(x,y);} } }
+  plx.stroke();
+
+  // ---------- markers + labels ----------
+  function dot(P,color,label,lcolor,dx,dy){
+    plx.fillStyle=color; plx.beginPath(); plx.arc(P[0],P[1],6,0,Math.PI*2); plx.fill();
+    plx.fillStyle=lcolor; plx.font='800 16px "Arial Black", -apple-system,sans-serif';
+    plx.textAlign='center'; plx.textBaseline='middle';
+    plx.fillText(label, P[0]+(dx||0), P[1]+(dy||0));
+  }
+  dot(Pp,'#ff2a2a','P','#ff2a2a',-16,-4);
+  dot(Zc,'#008000','Z','#008000',-18,4);
+  dot(Xp,'#0000ff','X','#0000ff',18,10);
+
+  if(Hc<0){
+    plx.fillStyle='#ff7a5c'; plx.font='600 12px -apple-system,sans-serif';
+    plx.textAlign='center';
+    plx.fillText('body is below the horizon — X lies on the far hemisphere', cx, cy+Rrim+42);
+  }
+
+  // ---------- readouts ----------
+  document.getElementById('pHc').textContent = fmtDM(Hc,'');
+  document.getElementById('pZn').textContent = fmtDM(Zn,'360');
+  document.getElementById('pZX').textContent = fmtDM(zdist,'');
+  document.getElementById('pZP').textContent = fmtDM(colat,'');
+  document.getElementById('pPX').textContent = fmtDM(poldist,'');
+
+  if(document.activeElement!==document.getElementById('latT2'))
+    document.getElementById('latT2').value=fmtDM(lat,'NS');
+  if(document.activeElement!==document.getElementById('decT2'))
+    document.getElementById('decT2').value=fmtDM(dec,'NS');
+  if(document.activeElement!==document.getElementById('lhaT2'))
+    document.getElementById('lhaT2').value=fmtDM(lha,'360');
+}
+
+// wire plate controls
+function bindPlate(textId, sliderId, kind, isLat){
+  const sl=document.getElementById(sliderId), t=document.getElementById(textId);
+  sl.addEventListener('input', ()=>{ drawPlate(); });
+  t.addEventListener('change', ()=>{
+    let v=parseDM(t.value); if(v===null||isNaN(v)){ drawPlate(); return; }
+    if(kind==='360'){ v=((v%360)+360)%360; }
+    v=Math.max(+sl.min, Math.min(+sl.max, v));
+    sl.value=v; drawPlate();
+  });
+  t.addEventListener('keydown', e=>{ if(e.key==='Enter') t.blur(); });
+}
+bindPlate('latT2','lat2','NS',true);
+bindPlate('decT2','dec2','NS',false);
+bindPlate('lhaT2','lha2','360',false);
+
+</script>
+</body>
+</html>
